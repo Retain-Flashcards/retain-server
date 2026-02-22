@@ -60,12 +60,12 @@ class CardManager:
     async def initialize(self) -> None:
         """Fetch the first due card, derive a topic, run the initial query."""
         first_card = await self._fetch_first_due_card()
-        if first_card is None:
-            raise ValueError("No due cards found for deck_id: {}".format(self.deck_id))
 
-        topic = first_card.get('front_content', None)
-        if first_card.get('back_content') is not None:
-            topic += '\n\n' + first_card.get('back_content')
+        topic = None
+        if first_card:
+            topic = first_card.get('front_content', None)
+            if first_card.get('back_content') is not None:
+                topic += '\n\n' + first_card.get('back_content')
         if topic is None:
             topic = 'general'
 
