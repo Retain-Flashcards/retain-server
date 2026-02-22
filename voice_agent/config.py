@@ -37,7 +37,7 @@ class Settings(BaseSettings):
         default="Charon",
         description="Prebuilt voice name for speech output",
     )
-    google_application_credentials: Optional[str] = Field(..., description='Path to service account key')
+    google_application_credentials: Optional[str] = Field(default=None, description='Path to service account key (optional)')
 
     # ── System prompt ───────────────────────────────────────────
     system_instruction: str = Field(
