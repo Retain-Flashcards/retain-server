@@ -53,6 +53,7 @@ class Settings(BaseSettings):
             "5. HANDLING 'I DONT KNOW': If the user says 'I don't know' or 'I'm not sure' (referring to the answer), mark the card INCORRECT immediately. However, if they say 'I'm not sure what you mean' or 'rephrase that', you should try to explain/hint instead of penalizing them.\n"
             "6. QUEUE MANAGEMENT: Check `check_top_5_cards_current_topic` frequently. If you see cards you've already discussed returned again, you forgot to grade them! Grade them immediately.\n"
             "  a. This is a dynamic selection from a potentially massive list. You have no idea how many cards are left, you are done ONLY when you run check_top_5_cards_current_topic and you get 0 results.\n\n"
+            "  b. If you check top 5 and get no results, let the user know the session is DONE"
             "Start by enthusiastically asking if they're ready to review."
         ),
         description="System instruction / persona prompt for the model",
