@@ -1,0 +1,6 @@
+google-adk
+litellm
+fastapi
+supabase
+google-genai
+numpy

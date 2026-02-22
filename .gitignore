@@ -1,0 +1,8 @@
+.env
+google-service-account-key.json
+.venv
+card_agent/
+.adk/
+.DS_Store
+__pycache__/
+**/__pycache__/**
