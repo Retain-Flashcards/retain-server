@@ -124,6 +124,8 @@ class CardManager:
         deduplication is ensured if we append the new cards at the point of the
         first matching card ID in the cache, or the end of the cache
         """
+        if len(cards) == 0:
+            return
         search_card = cards[0]
 
         for i, card in enumerate(self.card_cache):
