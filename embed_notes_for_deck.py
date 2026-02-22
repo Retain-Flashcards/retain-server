@@ -46,7 +46,7 @@ def create_embeddings(notes: list[dict]) -> list[dict]:
         contents=text_list,
         config=types.EmbedContentConfig(
             output_dimensionality=768,
-            task_type='SEMANTIC_SIMILARITY'
+            task_type='RETRIEVAL_DOCUMENT'
         )
     )
 

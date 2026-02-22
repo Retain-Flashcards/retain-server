@@ -13,3 +13,11 @@ async def supabase_client(user_jwt: str) -> AsyncClient:
             'Authorization': f'Bearer {user_jwt}'
         })
     )
+
+
+# Create a supabase client with service role key for server-side writes
+async def supabase_service_client() -> AsyncClient:
+    return await acreate_client(
+        settings.supabase_url,
+        settings.supabase_service_role_key,
+    )

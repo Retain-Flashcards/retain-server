@@ -84,6 +84,16 @@ class Settings(BaseSettings):
         ...,
         description="Supabase JWT secret for token verification (required)",
     )
+    supabase_service_role_key: str = Field(
+        default="",
+        description="Supabase service role key for server-side writes (required for embed endpoint)",
+    )
+
+    # ── Embedding webhook ───────────────────────────────────────
+    embed_webhook_secret: str = Field(
+        default="",
+        description="Shared secret for the /embed-note webhook endpoint",
+    )
 
     # ── Server ──────────────────────────────────────────────────
     host: str = Field(default="0.0.0.0", description="Uvicorn bind host")

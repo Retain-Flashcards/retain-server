@@ -1,0 +1,64 @@
+-- ================================================================
+-- Supabase Database Webhook for note embedding
+-- ================================================================
+--
+-- This file documents how to set up a Supabase Database Webhook
+-- that fires on INSERT to the `notes` table and POSTs to your
+-- server's /embed-note endpoint.
+--
+-- SETUP (via Supabase Dashboard):
+-- ================================================================
+--
+-- 1. Go to your Supabase project → Database → Webhooks
+-- 2. Click "Create a new hook"
+-- 3. Configure:
+--    - Name:           embed_note_on_insert
+--    - Table:          notes
+--    - Events:         INSERT (only)
+--    - Type:           HTTP Request
+--    - Method:         POST
+--    - URL:            https://<YOUR_SERVER_URL>/embed-note
+--    - HTTP Headers:
+--        Authorization: Bearer <YOUR_EMBED_WEBHOOK_SECRET>
+--        Content-Type:  application/json
+--
+-- The webhook will automatically send the new row as:
+--   { "type": "INSERT", "table": "notes", "record": { ... }, "old_record": null }
+--
+-- Your /embed-note endpoint expects the "record" key to contain
+-- the note's id, front_content, and back_content.
+--
+-- ================================================================
+-- ALTERNATIVE: Manual pg_net trigger (if you prefer SQL-only)
+-- ================================================================
+-- Requires the pg_net extension to be enabled in your project.
+-- Uncomment the following to use it instead of the dashboard webhook.
+--
+-- CREATE OR REPLACE FUNCTION public.embed_note_on_insert()
+-- RETURNS trigger
+-- LANGUAGE plpgsql
+-- SECURITY DEFINER
+-- AS $$
+-- BEGIN
+--   PERFORM net.http_post(
+--     url     := 'https://<YOUR_SERVER_URL>/embed-note',
+--     headers := jsonb_build_object(
+--       'Content-Type', 'application/json',
+--       'Authorization', 'Bearer <YOUR_EMBED_WEBHOOK_SECRET>'
+--     ),
+--     body := jsonb_build_object(
+--       'record', jsonb_build_object(
+--         'id', NEW.id,
+--         'front_content', NEW.front_content,
+--         'back_content', NEW.back_content
+--       )
+--     )
+--   );
+--   RETURN NEW;
+-- END;
+-- $$;
+--
+-- CREATE TRIGGER embed_note_after_insert
+--   AFTER INSERT ON public.notes
+--   FOR EACH ROW
+--   EXECUTE FUNCTION public.embed_note_on_insert();

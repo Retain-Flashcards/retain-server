@@ -10,16 +10,18 @@ import logging
 from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, Request, HTTPException
+from fastapi.responses import JSONResponse
 from starlette.websockets import WebSocketState
 
 from voice_agent.config import get_settings, Settings
 from voice_agent.gemini_session import GeminiSessionManager
 from voice_agent.session_store import SessionStore
 from voice_agent.auth import verify_token
-from voice_agent.supabase import supabase_client
+from voice_agent.supabase import supabase_client, supabase_service_client
 from voice_agent.card_manager import CardManager
 from voice_agent.background import BackgroundTaskManager
+from voice_agent.embeddings import EmbeddingService
 
 # ── Logging setup ───────────────────────────────────────────────
 
@@ -62,6 +64,59 @@ async def auth_config() -> dict:
         "supabase_url": settings.supabase_url,
         "supabase_anon_key": settings.supabase_key,
     }
+
+
+# ── Embedding webhook ───────────────────────────────────────────
+
+_embedding_service: EmbeddingService | None = None
+
+
+def _get_embedding_service() -> EmbeddingService:
+    """Lazily initialise the shared EmbeddingService."""
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = EmbeddingService(settings)
+    return _embedding_service
+
+
+@app.post("/embed-note")
+async def embed_note(request: Request) -> JSONResponse:
+    """Webhook endpoint to embed a single note on creation.
+
+    Secured by a shared secret in the Authorization header.
+    Expects a Supabase webhook payload: { "record": { ... } }
+    """
+    # ── Authenticate ────────────────────────────────────────────
+    auth_header = request.headers.get("authorization", "")
+    expected = f"Bearer {settings.embed_webhook_secret}"
+    if not settings.embed_webhook_secret or auth_header != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # ── Parse payload ──────────────────────────────────────────
+    body = await request.json()
+    record = body.get("record")
+    if not record:
+        raise HTTPException(status_code=400, detail="Missing 'record' in payload")
+
+    note_id = record.get("id")
+    front = record.get("front_content", "") or ""
+    back = record.get("back_content", "") or ""
+    text = f"{front}\n\n{back}".strip()
+
+    if not note_id or not text:
+        raise HTTPException(status_code=400, detail="Note must have an id and content")
+
+    # ── Embed & persist ────────────────────────────────────────
+    svc = _get_embedding_service()
+    embedding = svc.embed_note(text)
+
+    supabase = await supabase_service_client()
+    await supabase.table("notes").update(
+        {"embedding": embedding}
+    ).eq("id", note_id).execute()
+
+    logger.info("Embedded note %s", note_id)
+    return JSONResponse({"status": "ok", "note_id": note_id})
 
 
 @app.websocket("/ws")

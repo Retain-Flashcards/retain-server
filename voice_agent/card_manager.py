@@ -4,9 +4,6 @@ Card manager with prefetch / serve / cache pattern.
 Fetches 10 cards per query, serves 5 immediately, caches the other 5.
 When the ready buffer depletes, the prefetch buffer is promoted and a
 background refill is triggered.
-
-All database / embedding queries are **stubs** returning dummy data.
-Replace ``_query_cards_by_topic`` with a real vector-similarity lookup.
 """
 
 import asyncio
@@ -14,14 +11,13 @@ import logging
 import random
 from collections import deque
 from typing import Any
-from google.genai import Client, types
 import re
-import numpy as np
 from enum import StrEnum
 
 from voice_agent.supabase import AsyncClient
 from voice_agent.background import BackgroundTaskManager
 from voice_agent.config import Settings
+from voice_agent.embeddings import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +52,7 @@ class CardManager:
         self.card_cache: list[dict[str, Any]] = []
         self.card_ids_to_num_ids: dict[str, int] = {}
         self.num_ids_to_card_ids: dict[int, str] = {}
-        self._client = Client(
-            vertexai=True,
-            project=self.settings.gcp_project_id,
-            location=self.settings.gcp_location
-        )
+        self._embedding_service = EmbeddingService(settings)
         self._skipped_cards: set[str] = set()
 
     # ── Lifecycle ───────────────────────────────────────────────
@@ -81,7 +73,6 @@ class CardManager:
         await self.set_topic(topic)
 
     def _clean_text(self, text: str) -> str:
-        # text = re.sub(r'{{c(\d)::(.+?)(?:(?:::)([^:]+)?)?}}', r'\2', text).strip()
         text = re.sub(r'<img.*src=[\'\"].*[\'\"].*>', '', text).strip()
         text = re.sub(r'!\[.+?\]\(.+?\)', '<image>', text).strip()
         return text
@@ -101,26 +92,9 @@ class CardManager:
 
         return self._clean_text(text)
 
-    def transform_embedding(self, embedding_values):
-        np_embedding = np.array(embedding_values)
-        return (np_embedding / np.linalg.norm(np_embedding)).tolist()
-
     async def _fetch_first_due_card(self) -> dict[str, Any] | None:
         card = await self.supabase.table('randomized_reviews').select('*').eq('deck_id', self.deck_id).execute()
         return card.data[0] if card.data and len(card.data) > 0 else None
-
-    def embed_text(self, text: str):
-        #Generate the embedding
-        embedding = self._client.models.embed_content(
-            model='gemini-embedding-001', 
-            contents=self._clean_text(text),
-            config=types.EmbedContentConfig(
-                output_dimensionality=768,
-                task_type='SEMANTIC_SIMILARITY'
-            )
-        ).embeddings[0].values
-
-        return self.transform_embedding(embedding)
 
     async def _query_cards_by_topic(self, embedding, limit: int = 10) -> list[dict[str, Any]]:
         cards = await self.supabase.rpc('search_voice_session_cards', {
@@ -183,7 +157,7 @@ class CardManager:
     async def set_topic(self, topic: str) -> None:
         """Change the current topic, clear cache, and refill."""
         self.current_topic = topic
-        self.current_topic_embedding = self.embed_text(topic)
+        self.current_topic_embedding = self._embedding_service.embed_query(topic)
         self.card_cache.clear()
 
         await self._update_cache()
