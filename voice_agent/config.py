@@ -9,6 +9,7 @@ validation error at startup if missing.
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 from dotenv import load_dotenv
+from typing import Optional
 
 load_dotenv()
 
