@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from supabase import create_client
 
 from voice_agent.config import get_settings
-from voice_agent.embeddings import EmbeddingService
+from voice_agent.embeddings import EmbeddingService, clean_text
 
 load_dotenv()
 
@@ -36,7 +36,7 @@ def fetch_notes(supabase, batch_size: int) -> list[dict]:
     """Fetch a page of notes that still need embeddings."""
     response = (
         supabase.table("notes")
-        .select("id, front_content, back_content")
+        .select("*")
         .is_("embedding", "null")
         .limit(batch_size)
         .execute()
@@ -84,20 +84,35 @@ def main() -> None:
         batch_num += 1
         logger.info("Batch %d: %d notes", batch_num, len(notes))
 
-        # Build the text list for batch embedding
+        # Build the text list for batch embedding, filtering out empty notes
+        valid_notes = []
         texts = []
         for note in notes:
             front = note.get("front_content", "") or ""
             back = note.get("back_content", "") or ""
-            texts.append(f"{front}\n\n{back}".strip())
+            text = clean_text(f"{front}\n\n{back}")
+            if text:
+                valid_notes.append(note)
+                texts.append(text)
+
+        if not valid_notes:
+            logger.warning("Batch %d: all notes had empty text after cleaning, skipping", batch_num)
+            continue
 
         # Generate embeddings in one API call
         embeddings = embedding_service.embed_notes_batch(texts)
 
+        if len(embeddings) != len(valid_notes):
+            logger.error(
+                "Batch %d: expected %d embeddings but got %d — skipping batch",
+                batch_num, len(valid_notes), len(embeddings),
+            )
+            continue
+
         # Build upsert records
         records = [
-            {"id": notes[i]["id"], "embedding": embeddings[i]}
-            for i in range(len(notes))
+            {**valid_notes[i], "embedding": embeddings[i]}
+            for i in range(len(valid_notes))
         ]
         upsert_embeddings(supabase, records)
 

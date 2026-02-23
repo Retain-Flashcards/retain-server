@@ -18,10 +18,22 @@ logger = logging.getLogger(__name__)
 
 
 def clean_text(text: str) -> str:
-    """Strip cloze markup, images, and markdown image refs from card text."""
-    text = re.sub(r'{{c(\d)::(.+?)(?:(?:::)([^:]+)?)?}}', r'\2', text).strip()
-    text = re.sub(r'<img.*src=[\'\\"].*[\'\\"].*>', '', text).strip()
-    text = re.sub(r'!\[.+?\]\(.+?\)', '', text).strip()
+    """Strip cloze markup, HTML tags, images, and non-text parts from card text."""
+    # Unwrap cloze deletions, keeping the answer text
+    text = re.sub(r'{{c(\d)::(.+?)(?:(?:::)([^:]+)?)?}}', r'\2', text)
+    # Remove markdown image references  ![alt](url)
+    text = re.sub(r'!\[.*?\]\(.*?\)', '', text)
+    # Remove all HTML tags (img, video, audio, br, div, etc.)
+    text = re.sub(r'<[^>]+/?>', '', text)
+    # Remove any stray base64 data URIs
+    text = re.sub(r'data:[\w/\-]+;base64,[A-Za-z0-9+/=]+', '', text)
+    # Strip markdown bold/italic markers but keep text
+    text = re.sub(r'\*{1,3}(.+?)\*{1,3}', r'\1', text)
+    text = re.sub(r'_{1,3}(.+?)_{1,3}', r'\1', text)
+    # Strip markdown heading markers
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Collapse whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 
