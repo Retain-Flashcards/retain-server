@@ -21,8 +21,7 @@ from voice_agent.auth import verify_token
 from voice_agent.supabase import supabase_client, supabase_service_client
 from voice_agent.card_manager import CardManager
 from voice_agent.background import BackgroundTaskManager
-from voice_agent.embeddings import EmbeddingService
-
+from voice_agent.embeddings import EmbeddingService, clean_text
 # ── Logging setup ───────────────────────────────────────────────
 
 settings = get_settings()
@@ -117,6 +116,44 @@ async def embed_note(request: Request) -> JSONResponse:
 
     logger.info("Embedded note %s", note_id)
     return JSONResponse({"status": "ok", "note_id": note_id})
+
+@app.post('/embed-query')
+async def embed_query(req: Request) -> JSONResponse:
+    '''Used to embed a query for retrieving cards'''
+    auth_header = req.headers.get("authorization", "")
+
+    token = auth_header.replace('Bearer ', '')
+
+    user_id = verify_token(token)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Initialize supabase, session store, and Card Manager
+    supabase = await supabase_client(token)
+
+    # This feature is only for paid users
+    user_record = await supabase.table('users').select('plan').eq('id', user_id).single().execute()
+    if not user_record.data or user_record.data['plan'] != 'retain-pro':
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Once authenticated and authorized, embed the query
+    body = await req.json()
+    query = body.get('query')
+
+    if not isinstance(query, str): 
+        raise HTTPException(status_code=400, detail="Query must be a string")
+        
+    query = clean_text(query)
+    if not query:
+        raise HTTPException(status_code=400, detail="Missing 'query' in payload")
+        
+    if len(query) > 1000:
+        raise HTTPException(status_code=400, detail="Query is too long")
+
+    svc = _get_embedding_service()
+    embedding = svc.embed_query(query)
+
+    return JSONResponse({'status': 'ok', 'embedding': embedding})
 
 
 @app.websocket("/ws")
