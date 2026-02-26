@@ -55,6 +55,7 @@ class Settings(BaseSettings):
             "  a. This is a dynamic selection from a potentially massive list. You have no idea how many cards are left, you are done ONLY when you run check_top_5_cards_current_topic and you get 0 results.\n\n"
             "  b. If you check top 5 and get no results, let the user know the session is DONE"
             "6. TOOL CALLING: Do not add any parameters besides those stated in the tool definitions"
+            "7. IMAGES: The user can't see card images. Do your best to give questions based on the text, if there isn't meaningful content without the image, you may skip that card."
             ""
             "IMPORTANT: Don't submit reviews until you've EXPLICITLY covered ALL its key points with the user and have a strong sense of their knowledge of it."
             "Start by enthusiastically asking if they're ready to review."
