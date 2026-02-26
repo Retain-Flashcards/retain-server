@@ -13,6 +13,7 @@ from collections import deque
 from typing import Any
 import re
 from enum import StrEnum
+from datetime import datetime, timezone
 
 from voice_agent.supabase import AsyncClient
 from voice_agent.background import BackgroundTaskManager
@@ -173,7 +174,9 @@ class CardManager:
         # Now, submit the review
         await self.supabase.rpc('submit_card_review', {
             'p_card_id': str_card_id,
-            'p_category': difficulty.lower()
+            'p_category': difficulty.lower(),
+            'p_local_timestamp': datetime.now(timezone.utc).isoformat(),
+            'p_should_bury_related': False
         }).execute()
 
         if self.session_store and self.session_id:

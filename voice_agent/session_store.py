@@ -66,6 +66,16 @@ class SessionStore:
                 {"cards_reviewed": new_count, "updated_at": "now()"}
             ).eq("id", session_id).execute()
 
+    async def update_session_stats(self, session_id: str, length_seconds: int, prompt_tokens: int, completion_tokens: int) -> None:
+        """Update the length and token usage of a session."""
+        await self.supabase.table(TABLE).update({
+            "session_length": length_seconds, 
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "updated_at": "now()"
+        }).eq("id", session_id).execute()
+        logger.debug("Updated session %s stats: %ds, %d prompt tokens, %d completion tokens", session_id, length_seconds, prompt_tokens, completion_tokens)
+
     async def close_session(self, session_id: str, stats: dict[str, Any] | None = None) -> None:
         """Mark a session as completed, optionally storing final stats."""
         update_data: dict[str, Any] = {"status": "completed", "updated_at": "now()"}

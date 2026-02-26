@@ -219,6 +219,18 @@ async def websocket_endpoint(
         await websocket.close(code=1008)
         return
 
+    # Fetch monthly voice usage
+    usage_res = await supabase.rpc("get_monthly_voice_usage", {"p_user_id": user_id}).execute()
+    monthly_usage_seconds = usage_res.data if usage_res.data is not None else 0
+    
+    if monthly_usage_seconds >= 3600:
+        await websocket.send_json({
+            "type": "error",
+            "message": "You have exceeded your monthly voice study limit of 60 minutes.",
+        })
+        await websocket.close(code=1008)
+        return
+
     session_store = SessionStore(supabase)
     bg = BackgroundTaskManager()
 
@@ -249,6 +261,8 @@ async def websocket_endpoint(
                 await websocket.close(code=1008)
                 return
             resume_handle = row.get("resume_handle")
+            base_prompt_tokens = row.get("prompt_tokens") or 0
+            base_completion_tokens = row.get("completion_tokens") or 0
             await session_store.update_status(session_id, "active")
 
             # Fetch deck ID from the session row
@@ -258,6 +272,8 @@ async def websocket_endpoint(
         else:
             row = await session_store.create_session(user_id, deck_id)
             session_id = row["id"]
+            base_prompt_tokens = 0
+            base_completion_tokens = 0
             logger.info("Created new session %s for user %s", session_id, user_id)
 
         # Set up the card manager
@@ -265,7 +281,7 @@ async def websocket_endpoint(
 
 
         # ── Connect to Gemini ───────────────────────────────────
-        session = GeminiSessionManager(websocket, settings, session_store, card_manager, bg)
+        session = GeminiSessionManager(websocket, settings, session_store, card_manager, bg, monthly_usage_seconds, base_prompt_tokens, base_completion_tokens)
         await session.connect(
             resume_handle=resume_handle,
             session_id=session_id,

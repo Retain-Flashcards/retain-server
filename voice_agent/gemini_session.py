@@ -9,6 +9,8 @@ import asyncio
 import enum
 import json
 import logging
+import time
+from datetime import datetime
 from typing import Any
 
 import websockets.exceptions
@@ -42,7 +44,7 @@ class GeminiSessionManager:
         Application configuration.
     """
 
-    def __init__(self, websocket: WebSocket, settings: Settings, session_store: SessionStore, card_manager: CardManager, bg: BackgroundTaskManager) -> None:
+    def __init__(self, websocket: WebSocket, settings: Settings, session_store: SessionStore, card_manager: CardManager, bg: BackgroundTaskManager, monthly_usage_seconds: int = 0, base_prompt_tokens: int = 0, base_completion_tokens: int = 0) -> None:
         self.ws = websocket
         self.settings = settings
         self.state = SessionState.ACTIVE
@@ -67,6 +69,35 @@ class GeminiSessionManager:
         # Track AI context for aggressive reconnection recovery
         self._current_turn_text: list[str] = []
         self._last_ai_turn: str = ""
+
+        # Usage tracking
+        self._monthly_usage_seconds = monthly_usage_seconds
+        self._accumulated_session_seconds = 0.0
+        self._active_start_time: float | None = time.time()
+        
+        # Token tracking
+        self._base_prompt_tokens = base_prompt_tokens
+        self._base_completion_tokens = base_completion_tokens
+        self._session_prompt_tokens = 0
+        self._session_completion_tokens = 0
+
+    def _get_current_session_seconds(self) -> int:
+        """Calculate total seconds elapsed for this session."""
+        total = self._accumulated_session_seconds
+        if self.state is SessionState.ACTIVE and self._active_start_time is not None:
+            total += time.time() - self._active_start_time
+        return int(total)
+
+    def _save_session_stats(self) -> None:
+        """Persists the current session duration and tokens to the DB in the background."""
+        if self.session_id:
+            length = self._get_current_session_seconds()
+            p_tokens = self._base_prompt_tokens + self._session_prompt_tokens
+            c_tokens = self._base_completion_tokens + self._session_completion_tokens
+            self._bg.schedule(
+                self._session_store.update_session_stats(self.session_id, length, p_tokens, c_tokens),
+                name="persist-session-stats"
+            )
 
     # ── Lifecycle ───────────────────────────────────────────────
 
@@ -143,9 +174,20 @@ class GeminiSessionManager:
         if not self._card_manager.current_topic:
             self._bg.schedule(self._card_manager.initialize(), name="cache-init")
 
+        self._active_start_time = time.time()
+
     async def disconnect(self) -> None:
         """Gracefully tear down the session and all background work."""
         self._closed = True
+
+        if self.session_id:
+            try:
+                length = self._get_current_session_seconds()
+                p_tokens = self._base_prompt_tokens + self._session_prompt_tokens
+                c_tokens = self._base_completion_tokens + self._session_completion_tokens
+                await self._session_store.update_session_stats(self.session_id, length, p_tokens, c_tokens)
+            except Exception:
+                logger.exception("Failed to save session stats on disconnect")
 
         if self._receive_task and not self._receive_task.done():
             self._receive_task.cancel()
@@ -262,10 +304,41 @@ class GeminiSessionManager:
         )
 
     async def _keepalive_loop(self) -> None:
-        """Send a silent audio frame every 3 seconds to prevent idle timeout."""
+        """Send a silent audio frame every 3 seconds to prevent idle timeout and send usage update."""
         try:
             while not self._closed:
-                await asyncio.sleep(3)
+                # Send usage update to client
+                if self.state is SessionState.ACTIVE:
+                    current_session_seconds = self._get_current_session_seconds()
+                    total_seconds_used = self._monthly_usage_seconds + current_session_seconds
+                    minutes_used = total_seconds_used // 60
+                    total_minute_budget = 60
+                    minutes_left = max(0, total_minute_budget - minutes_used)
+                    
+                    # Calculate first day of next month
+                    now = datetime.now()
+                    if now.month == 12:
+                        next_month = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                    else:
+                        next_month = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                    
+                    await self._send_json({
+                        "type": "usage_update",
+                        "total_minute_budget": total_minute_budget,
+                        "minutes_used": minutes_used,
+                        "minutes_left": minutes_left,
+                        "next_refresh_date": next_month.isoformat() + "Z"
+                    })
+
+                    # Disconnect if limit reached
+                    if minutes_left <= 0:
+                        logger.info("User exceeded 60m voice limit mid-session")
+                        await self._send_error("You have reached your 60 minute voice study limit for this month.")
+                        # This avoids writing the completed state, wait for WS to close
+                        await self.ws.close(code=1008)
+                        self._closed = True
+                        return
+
                 # If connected and active, send a ping to keep Gemini from dropping us
                 if self._session is not None and self.state is SessionState.ACTIVE:
                     try:
@@ -275,6 +348,7 @@ class GeminiSessionManager:
                         )
                     except Exception:
                         pass
+                await asyncio.sleep(3)
         except asyncio.CancelledError:
             pass
 
@@ -310,6 +384,12 @@ class GeminiSessionManager:
 
     async def _handle_response(self, response: Any) -> None:
         """Route a single Gemini response to the appropriate handler."""
+
+        # ── Usage Metadata ──────────────────────────────────────
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            metrics = response.usage_metadata
+            self._session_prompt_tokens = max(self._session_prompt_tokens, getattr(metrics, "prompt_token_count", 0))
+            self._session_completion_tokens = max(self._session_completion_tokens, getattr(metrics, "response_token_count", 0))
 
         # ── Session resumption token update ──────────────────────
         if response.session_resumption_update:
@@ -416,6 +496,10 @@ class GeminiSessionManager:
                 "result": result,
             })
 
+            # Save session length upon successful card review
+            if fc.name == "submit_review":
+                self._save_session_stats()
+
             # Prevent sending full card data back to Gemini to save tokens
             model_result = dict(result) if isinstance(result, dict) else result
             if isinstance(model_result, dict) and "card" in model_result:
@@ -450,18 +534,23 @@ class GeminiSessionManager:
 
         self.state = SessionState.PAUSED
 
+        if self._active_start_time is not None:
+            self._accumulated_session_seconds += time.time() - self._active_start_time
+            self._active_start_time = None
+
         if self._session is not None:
             try:
                 await self._session.send_realtime_input(audio_stream_end=True)
             except Exception:
                 logger.exception("Failed to send audio_stream_end on pause")
 
-        # Persist paused status
+        # Persist paused status and session length
         if self.session_id:
             self._bg.schedule(
                 self._session_store.update_status(self.session_id, "paused"),
                 name="persist-pause",
             )
+            self._save_session_stats()
 
         await self._send_json({
             "type": "paused",
@@ -478,6 +567,7 @@ class GeminiSessionManager:
             return
 
         self.state = SessionState.ACTIVE
+        self._active_start_time = time.time()
 
         # Persist active status
         if self.session_id:

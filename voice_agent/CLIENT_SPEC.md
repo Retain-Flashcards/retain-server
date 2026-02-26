@@ -149,7 +149,19 @@ Sent if the upstream server needs to close the connection soon. The client shoul
 }
 ```
 
-#### 8. Errors (`error`)
+#### 8. Usage Update (`usage_update`)
+Sent periodically (e.g., every 3 seconds) to inform the client of the user's current voice session usage and remaining time.
+```json
+{
+  "type": "usage_update",
+  "total_minute_budget": 60,
+  "minutes_used": 15,
+  "minutes_left": 45,
+  "next_refresh_date": "2026-03-01T00:00:00Z"
+}
+```
+
+#### 9. Errors (`error`)
 Sent for critical failures or misconfigurations. The WebSocket connection may be closed following an error.
 ```json
 {
