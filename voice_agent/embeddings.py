@@ -61,9 +61,14 @@ class EmbeddingService:
 
     # ── Single-item helpers ─────────────────────────────────────
 
+    def _zero_embedding(self) -> list[float]:
+        return [0.0] * self.DIMENSIONS
+
     def embed_note(self, text: str) -> list[float]:
         """Embed note content using RETRIEVAL_DOCUMENT task type."""
         cleaned = clean_text(text)
+        if not cleaned:
+            return self._zero_embedding()
         result = self._client.models.embed_content(
             model=self.MODEL,
             contents=cleaned,
@@ -77,6 +82,8 @@ class EmbeddingService:
     def embed_query(self, text: str) -> list[float]:
         """Embed a search query using RETRIEVAL_QUERY task type."""
         cleaned = clean_text(text)
+        if not cleaned:
+            return self._zero_embedding()
         result = self._client.models.embed_content(
             model=self.MODEL,
             contents=cleaned,
@@ -92,12 +99,20 @@ class EmbeddingService:
     def embed_notes_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed a list of note texts in a single API call using RETRIEVAL_DOCUMENT."""
         cleaned = [clean_text(t) for t in texts]
-        result = self._client.models.embed_content(
-            model=self.MODEL,
-            contents=cleaned,
-            config=types.EmbedContentConfig(
-                output_dimensionality=self.DIMENSIONS,
-                task_type="RETRIEVAL_DOCUMENT",
-            ),
-        )
-        return [transform_embedding(e.values) for e in result.embeddings]
+        
+        valid_indices = [i for i, c in enumerate(cleaned) if c]
+        valid_texts = [c for c in cleaned if c]
+        
+        results = [self._zero_embedding() for _ in texts]
+        if valid_texts:
+            result = self._client.models.embed_content(
+                model=self.MODEL,
+                contents=valid_texts,
+                config=types.EmbedContentConfig(
+                    output_dimensionality=self.DIMENSIONS,
+                    task_type="RETRIEVAL_DOCUMENT",
+                ),
+            )
+            for i, emb in zip(valid_indices, result.embeddings):
+                results[i] = transform_embedding(emb.values)
+        return results

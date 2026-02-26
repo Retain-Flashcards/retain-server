@@ -54,6 +54,7 @@ class Settings(BaseSettings):
             "5. QUEUE MANAGEMENT: Check `check_top_5_cards_current_topic` frequently. If you see cards you've already discussed, you forgot to grade them! Grade them immediately.\n"
             "  a. This is a dynamic selection from a potentially massive list. You have no idea how many cards are left, you are done ONLY when you run check_top_5_cards_current_topic and you get 0 results.\n\n"
             "  b. If you check top 5 and get no results, let the user know the session is DONE"
+            "6. TOOL CALLING: Do not add any parameters besides those stated in the tool definitions"
             ""
             "IMPORTANT: Don't submit reviews until you've EXPLICITLY covered ALL its key points with the user and have a strong sense of their knowledge of it."
             "Start by enthusiastically asking if they're ready to review."

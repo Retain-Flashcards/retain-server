@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 # ── Tool implementations ────────────────────────────────────────
 
-async def check_top_5_cards_current_topic(card_manager: CardManager) -> dict:
+async def check_top_5_cards_current_topic(card_manager: CardManager, **kwargs) -> dict:
     """Return the next 5 cards for the current topic from the cache."""
     cards = await card_manager.get_top(5)
     return {
@@ -24,7 +24,7 @@ async def check_top_5_cards_current_topic(card_manager: CardManager) -> dict:
     }
 
 
-async def search_cards_for_new_topic(card_manager: CardManager, topic: str) -> dict:
+async def search_cards_for_new_topic(card_manager: CardManager, topic: str, **kwargs) -> dict:
     """Switch to a new topic, refetch cards, and return the first 5."""
     await card_manager.set_topic(topic)
     cards = await card_manager.get_top(5)
@@ -34,7 +34,7 @@ async def search_cards_for_new_topic(card_manager: CardManager, topic: str) -> d
     }
 
 
-async def submit_review(card_manager: CardManager, card_id: int, difficulty: str) -> dict:
+async def submit_review(card_manager: CardManager, card_id: int, difficulty: str, **kwargs) -> dict:
     """Record a review for a card and evict it from the cache.
 
     Parameters
@@ -64,7 +64,7 @@ async def submit_review(card_manager: CardManager, card_id: int, difficulty: str
         result["card"] = card
     return result
 
-async def skip_card_permanently(card_manager: CardManager, card_id: int) -> dict:
+async def skip_card_permanently(card_manager: CardManager, card_id: int, **kwargs) -> dict:
     """Skip a card and evict it from the cache."""
     card = card_manager.get_card(card_id)
     card_manager.skip_card(card_id)
@@ -117,7 +117,7 @@ TOOL_DECLARATIONS: list[dict[str, Any]] = [
         "name": "submit_review",
         "description": (
             "Submit the user's review for a specific flashcard. Call this "
-            "after the user has demonstrated they know the blanked out items of the card."
+            "after the user has demonstrated they know ALL the blanked out items of the card."
         ),
         "parameters": {
             "type": "object",
@@ -130,9 +130,9 @@ TOOL_DECLARATIONS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": (
                         "How difficult the card was for the user. "
-                        "- correct = the user solidly knew the material and easily recalled ALL of it without your help (they won't see this for days)\n"
+                        "- correct = the user recalled ALL of the key concepts without your help easily (they won't see this for days)\n"
                         "- struggled = the user got it right, but they had to think for a while or needed a tiny hint to jumpstart their memory (they won't see this for days)\n"
-                        "- incorrect = the user said 'I don't know', missed ANY key piece of information, or you had to give them the answer. Even if they got 90% right, if they missed a key blank it is INCORRECT (they will see this again today)"
+                        "- incorrect = user said 'I don't know', missed ANY key piece of information, or you had to give them the answer. Even if they got 90% right, if they missed a key blank it is INCORRECT (they will see this again today)"
                     ),
                     "enum": ["correct", "struggled", "incorrect"],
                 },
@@ -144,7 +144,7 @@ TOOL_DECLARATIONS: list[dict[str, Any]] = [
         "name": "skip_card_permanently",
         "description": (
             "Mark a card as skipped so it doesn't return to your reviews. "
-            "Use rarely, only if a card is completely unusable or is a duplicate."
+            "Use only if a card is completely unusable or is a duplicate."
         ),
         "parameters": {
             "type": "object",

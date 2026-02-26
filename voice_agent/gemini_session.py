@@ -378,8 +378,9 @@ class GeminiSessionManager:
             })
         except WebSocketDisconnect:
             logger.info("Client disconnected during receive loop")
-        except Exception:
+        except Exception as e:
             logger.exception("Receive loop encountered an error")
+            logger.exception(e)
             await self._send_error("Session encountered an unexpected error")
 
     async def _handle_response(self, response: Any) -> None:
