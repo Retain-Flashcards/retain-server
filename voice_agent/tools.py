@@ -56,7 +56,7 @@ async def submit_review(card_manager: CardManager, card_id: int, difficulty: str
     logger.info("Review submitted — card_id=%d difficulty=%s (mapped to %s)", card_id, difficulty, mapped_difficulty)
     
     result = {
-        "status": "submitted_in_background",
+        "status": "submitted",
         "card_id": card_id,
         "difficulty": difficulty
     }
@@ -71,7 +71,7 @@ async def skip_card_permanently(card_manager: CardManager, card_id: int, **kwarg
     logger.info("Card skipped — card_id=%d", card_id)
     
     result = {
-        "status": "skipped_in_background",
+        "status": "skipped",
         "card_id": card_id
     }
     if card:
@@ -145,6 +145,7 @@ TOOL_DECLARATIONS: list[dict[str, Any]] = [
         "description": (
             "Mark a card as skipped so it doesn't return to your reviews. "
             "Use only if a card is completely unusable or is a duplicate."
+            "After skipping cards, it's a good idea to check your top 5 again for the new list."
         ),
         "parameters": {
             "type": "object",
