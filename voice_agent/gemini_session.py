@@ -389,8 +389,8 @@ class GeminiSessionManager:
         # ── Usage Metadata ──────────────────────────────────────
         if hasattr(response, "usage_metadata") and response.usage_metadata:
             metrics = response.usage_metadata
-            self._session_prompt_tokens = max(self._session_prompt_tokens, getattr(metrics, "prompt_token_count", 0))
-            self._session_completion_tokens = max(self._session_completion_tokens, getattr(metrics, "response_token_count", 0))
+            self._session_prompt_tokens = max(self._session_prompt_tokens if self._session_prompt_tokens is not None else 0, getattr(metrics, "prompt_token_count", 0))
+            self._session_completion_tokens = max(self._session_completion_tokens if self._session_completion_tokens is not None else 0, getattr(metrics, "response_token_count", 0))
 
         # ── Session resumption token update ──────────────────────
         if response.session_resumption_update:
