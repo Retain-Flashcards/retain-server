@@ -361,8 +361,21 @@ class GeminiSessionManager:
             while not self._closed:
                 turn = self._session.receive()
                 logger.info('Receiving from Gemini')
+                turn_function_responses: list[types.FunctionResponse] = []
                 async for response in turn:
-                    await self._handle_response(response)
+                    responses = await self._handle_response(response)
+                    if responses and "tool_results" in responses:
+                        turn_function_responses.extend(responses["tool_results"])
+
+                if turn_function_responses and self._session is not None:
+                    try:
+                        await self._session.send_tool_response(
+                            function_responses=turn_function_responses,
+                        )
+                    except Exception:
+                        logger.exception("Failed to send tool responses to Gemini")
+                        await self._send_error("Failed to process tool results")
+
                 # Brief yield to avoid busy-waiting between turns
                 await asyncio.sleep(0)
         except asyncio.CancelledError:
@@ -383,7 +396,7 @@ class GeminiSessionManager:
             logger.exception(e)
             await self._send_error("Session encountered an unexpected error")
 
-    async def _handle_response(self, response: Any) -> None:
+    async def _handle_response(self, response: Any) -> dict[str, Any]:
         """Route a single Gemini response to the appropriate handler."""
 
         # ── Usage Metadata ──────────────────────────────────────
@@ -404,7 +417,7 @@ class GeminiSessionManager:
                         self._session_store.update_handle(self.session_id, update.new_handle),
                         name="persist-handle",
                     )
-            return
+            return {}
 
         # ── GoAway — server is about to close the connection ────
         if response.go_away is not None:
@@ -415,12 +428,11 @@ class GeminiSessionManager:
                 "time_left": time_left,
                 "resume_handle": self._resume_handle,
             })
-            return
+            return {}
 
         # ── Tool calls ──────────────────────────────────────────
         if response.tool_call:
-            await self._handle_tool_calls(response.tool_call)
-            return
+            return await self._handle_tool_calls(response.tool_call)
 
         # ── Tool call cancellation ──────────────────────────────
         if response.tool_call_cancellation:
@@ -428,7 +440,7 @@ class GeminiSessionManager:
                 fc_id for fc_id in response.tool_call_cancellation.ids
             ]
             logger.info("Tool calls cancelled: %s", cancelled_ids)
-            return
+            return {}
 
         # ── Server content ──────────────────────────────────────
         if response.server_content:
@@ -438,7 +450,7 @@ class GeminiSessionManager:
             if sc.interrupted:
                 logger.debug("Gemini generation interrupted by VAD")
                 await self._send_json({"type": "interrupted"})
-                return
+                return {}
 
             # Audio transcription (model spoken text)
             if sc.output_transcription and sc.output_transcription.text:
@@ -470,12 +482,16 @@ class GeminiSessionManager:
                     logger.debug("Model turn complete")
                     
                 await self._send_json({"type": "turn_complete"})
+                
+        return {}
 
     # ── Tool call handling ──────────────────────────────────────
 
-    async def _handle_tool_calls(self, tool_call: Any) -> None:
-        """Execute tool calls and feed responses back to Gemini."""
+    async def _handle_tool_calls(self, tool_call: Any) -> dict[str, Any]:
+        """Execute tool calls and return responses to be sent back to Gemini."""
         function_responses: list[types.FunctionResponse] = []
+
+        logger.info('Called Tool HANDLER')
 
         for fc in tool_call.function_calls:
             logger.info("Tool call: %s(%s)", fc.name, fc.args)
@@ -506,23 +522,17 @@ class GeminiSessionManager:
             if isinstance(model_result, dict) and "card" in model_result:
                 del model_result["card"]
 
+            logger.info('Sending with SILENT')
             function_responses.append(
                 types.FunctionResponse(
                     id=fc.id,
                     name=fc.name,
                     response={"result": model_result},
+                    scheduling='SILENT'
                 )
             )
 
-        # Send all responses back to Gemini
-        if function_responses and self._session is not None:
-            try:
-                await self._session.send_tool_response(
-                    function_responses=function_responses,
-                )
-            except Exception:
-                logger.exception("Failed to send tool responses to Gemini")
-                await self._send_error("Failed to process tool results")
+        return {"tool_results": function_responses}
 
     # ── Pause / Resume ──────────────────────────────────────────
 
