@@ -491,8 +491,6 @@ class GeminiSessionManager:
         """Execute tool calls and return responses to be sent back to Gemini."""
         function_responses: list[types.FunctionResponse] = []
 
-        logger.info('Called Tool HANDLER')
-
         for fc in tool_call.function_calls:
             logger.info("Tool call: %s(%s)", fc.name, fc.args)
 
@@ -522,7 +520,6 @@ class GeminiSessionManager:
             if isinstance(model_result, dict) and "card" in model_result:
                 del model_result["card"]
 
-            logger.info('Sending with SILENT')
             function_responses.append(
                 types.FunctionResponse(
                     id=fc.id,
