@@ -526,8 +526,7 @@ class GeminiSessionManager:
                 types.FunctionResponse(
                     id=fc.id,
                     name=fc.name,
-                    response={"result": model_result},
-                    scheduling='SILENT'
+                    response={"result": model_result}
                 )
             )
 
